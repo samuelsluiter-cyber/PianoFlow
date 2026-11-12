@@ -311,13 +311,6 @@ struct MidiSong {
                       hand: handOf[r.group] ?? (r.pitch >= 60 ? .right : .left))
         }
         notes.sort { ($0.start, $0.pitch) < ($1.start, $1.pitch) }
-        if !handOf.isEmpty {
-            HandSplitter.fixUnplayable(&notes)
-        } else {
-            let barSec = Double(tsNum) * (4.0 / Double(tsDen)) * 60.0 / max(20, bpm ?? 120)
-            HandSplitter.assign(&notes, windowSec: barSec)
-        }
-
         let maxBeat = raws.map(\.endBeat).max() ?? 0
         let pulseQuarter = 4.0 / Double(tsDen)
         var pulses: [Double] = []
@@ -325,6 +318,14 @@ struct MidiSong {
         while b <= maxBeat + pulseQuarter && pulses.count < 50_000 {
             pulses.append(sec(b))
             b += pulseQuarter
+        }
+
+        if !handOf.isEmpty {
+            HandSplitter.fixUnplayable(&notes)
+        } else {
+            // Fenster = echte Takte aus dem Taktraster der Datei
+            let barStarts = stride(from: 0, to: pulses.count, by: max(tsNum, 1)).map { pulses[$0] }
+            HandSplitter.assign(&notes, window: { t in max(0, barStarts.lowerBound(t + 0.01) - 1) })
         }
 
         var song = MidiSong.build(title: url.deletingPathExtension().lastPathComponent,
@@ -411,7 +412,7 @@ enum HandSplitter {
     }
 
     /// Trennt per Takt-Fenster mit einer stabilen Grenze; nur bei unspielbaren Griffen wird pro Anschlag nachkorrigiert.
-    static func assign(_ notes: inout [NoteEvent], windowSec: Double) {
+    static func assign(_ notes: inout [NoteEvent], window windowOf: (Double) -> Int) {
         guard !notes.isEmpty else { return }
         // Anschlag-Gruppen bilden
         var groups: [[Int]] = []
@@ -422,10 +423,9 @@ enum HandSplitter {
             groups.append(Array(i..<j).sorted { notes[$0].pitch < notes[$1].pitch })
             i = j
         }
-        let win = max(0.5, windowSec)
-        var byWindow: [Int: [Int]] = [:]   // Fenster -> Gruppen-Indizes
+        var byWindow: [Int: [Int]] = [:]   // Fenster (Takt) -> Gruppen-Indizes
         for (g, idx) in groups.enumerated() {
-            byWindow[Int(notes[idx[0]].start / win), default: []].append(g)
+            byWindow[windowOf(notes[idx[0]].start), default: []].append(g)
         }
         func cost(_ ps: [Int], split: Int) -> Double {
             let k = ps.firstIndex { $0 >= split } ?? ps.count
@@ -435,12 +435,21 @@ enum HandSplitter {
         for w in byWindow.keys.sorted() {
             let gs = byWindow[w]!
             let pitchSets = gs.map { groups[$0].map { Int(notes[$0].pitch) } }
+            // Passt der ganze Takt in eine Handspanne (≤ Oktave), spielt ihn EINE Hand –
+            // tiefe Lage = linke Hand (z. B. Comptine-Intro: E3–H3–G3 + E4 alles links)
+            let all = pitchSets.flatMap { $0 }
+            if let lo = all.min(), let hi = all.max(), hi - lo <= 12 {
+                let mean = Double(all.reduce(0, +)) / Double(all.count)
+                let hand: Hand = mean < 62 ? .left : .right
+                for g in gs { for id in groups[g] { notes[id].hand = hand } }
+                prevSplit = hand == .left ? hi + 1 : lo
+                continue
+            }
             var best = (s: prevSplit, c: Double.infinity)
             for split in 36...84 {
                 var c = Double(abs(split - 60)) * 0.35 + Double(abs(split - prevSplit)) * 0.25
                 for ps in pitchSets { c += cost(ps, split: split) }
                 // eine Hand ganz leer zu lassen, während die andere voll ist, ist unwahrscheinlich
-                let all = pitchSets.flatMap { $0 }
                 let nl = all.filter { $0 < split }.count, nr = all.count - nl
                 if all.count >= 6 && (nl == 0 || nr == 0) { c += 4 }
                 if c < best.c { best = (split, c) }
