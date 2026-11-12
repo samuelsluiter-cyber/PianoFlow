@@ -1,0 +1,93 @@
+import SwiftUI
+import AppKit
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func application(_ application: NSApplication, open urls: [URL]) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            NotificationCenter.default.post(name: .openMIDIFiles, object: urls)
+        }
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        _ = AppServices.shared
+        if Prefs.bool("micEnabled", false) { MicSwitch.apply(true) }
+    }
+}
+
+@main
+struct PianoFlowApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+    @StateObject private var library = LibraryStore()
+
+    init() {
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--parse"), i + 1 < args.count {
+            do {
+                let s = try MidiSong.load(url: URL(fileURLWithPath: args[i + 1]))
+                let right = s.notes.filter { $0.hand == .right }.count
+                let fingers = s.fingers.prefix(12).map(String.init).joined(separator: " ")
+                print("OK \(s.title): \(s.notes.count) Noten (R \(right) / L \(s.notes.count - right)), \(String(format: "%.1f", s.duration)) s, \(s.timeSignature), \(Int(s.bpm)) BPM, \(s.barTimes.count) Takte, Schwierigkeit \(s.difficulty), Pedal \(s.pedalSpans.count), Finger: \(fingers)")
+                exit(0)
+            } catch {
+                print("FEHLER: \(error.localizedDescription)")
+                exit(1)
+            }
+        }
+        if let i = args.firstIndex(of: "--analyze"), i + 1 < args.count {
+            if let s = try? MidiSong.load(url: URL(fileURLWithPath: args[i + 1])) {
+                let a = SongAnalyzer.analyze(s)
+                print(a.summary(song: s, title: s.title))
+                print("LH pro Takt: \(a.lhPatternPerBar.joined(separator: " | "))")
+                print("Rollen: \(a.roles.prefix(20).joined(separator: " "))")
+                for arr in Arrangement.allCases {
+                    print("Fassung \(arr.rawValue): \(SongAnalyzer.arrangement(arr, song: s, analysis: a).notes.count) Noten")
+                }
+                print("Lernschritte: \(LessonPlan.steps(song: s, a: a).map(\.title).joined(separator: " → "))")
+            }
+            exit(0)
+        }
+        // Debug: Notenblatt als PNG rendern  --render <midi> <out.png> [zoom]
+        if let i = args.firstIndex(of: "--render"), i + 2 < args.count {
+            if let s = try? MidiSong.load(url: URL(fileURLWithPath: args[i + 1])) {
+                NotationRenderTool.render(song: s, out: URL(fileURLWithPath: args[i + 2]),
+                                          zoom: i + 3 < args.count ? Double(args[i + 3]) ?? 9 : 9)
+            }
+            exit(0)
+        }
+        if args.contains("--selftest") {
+            for kind in ExerciseKind.allCases {
+                let s = ExerciseFactory.make(ExerciseConfig(kind: kind, root: 2, octaves: 2, hands: .both, bpm: 90))
+                print("Übung \(kind.rawValue): \(s.notes.count) Noten, \(s.barTimes.count) Takte")
+            }
+            print("Akkorde:", ChordNamer.name(for: [60, 64, 67]) ?? "-", ChordNamer.name(for: [57, 60, 64]) ?? "-",
+                  ChordNamer.name(for: [55, 59, 62, 65]) ?? "-", ChordNamer.name(for: [64, 67, 72]) ?? "-")
+            let data = MidiWriter.data(notes: ExerciseFactory.make(ExerciseConfig()).notes, bpm: 100)
+            let url = URL(fileURLWithPath: "/tmp/pf-selftest.mid")
+            try? data.write(to: url)
+            if let s = try? MidiSong.load(url: url) { print("MIDI-Roundtrip OK: \(s.notes.count) Noten, \(Int(s.bpm)) BPM") }
+            exit(0)
+        }
+    }
+
+    var body: some Scene {
+        WindowGroup("PianoFlow") {
+            ContentView()
+                .environmentObject(library)
+                .frame(minWidth: 1240, minHeight: 720)
+                .preferredColorScheme(.dark)
+        }
+        .commands {
+            CommandGroup(replacing: .newItem) {}
+        }
+
+        Settings {
+            SettingsView()
+        }
+
+        MenuBarExtra {
+            MenuBarContent().environmentObject(library)
+        } label: {
+            Label("\(Int(library.todayMinutes)) min", systemImage: "pianokeys")
+        }
+    }
+}
