@@ -8,6 +8,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/PianoFlow "$APP/Contents/MacOS/PianoFlow"
 python3 make_demo.py "$APP/Contents/Resources/Fuer Elise (Demo).mid"
+[ -f catalog/songs.json ] && cp catalog/songs.json "$APP/Contents/Resources/songs.json"
 [ -f AppIcon.icns ] && cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

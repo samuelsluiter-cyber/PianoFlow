@@ -14,6 +14,9 @@ struct SongEntry: Codable, Identifiable, Hashable {
     var bestScore: Int?
     var bestStars: Int?
     var bestTempo: Double?
+    var sourceURL: String?      // Herkunft aus dem Song-Katalog
+    var license: String?
+    var composer: String?
 
     var isFavorite: Bool { favorite ?? false }
 
@@ -66,8 +69,9 @@ final class LibraryStore: ObservableObject {
         .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/Second Brain/Hobbys/PianoFlow – Übungslog.md")
 
     init() {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("PianoFlow", isDirectory: true)
+        let base = ProcessInfo.processInfo.environment["PF_LIBRARY_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("PianoFlow", isDirectory: true)
         songsDir = base.appendingPathComponent("Songs", isDirectory: true)
         indexURL = base.appendingPathComponent("library.json")
         sessionsURL = base.appendingPathComponent("sessions.json")
@@ -111,7 +115,10 @@ final class LibraryStore: ObservableObject {
 
     private func fillMissingDifficulty() {
         var changed = false
-        for i in songs.indices where songs[i].difficulty == nil {
+        // Skala v2 (Anschläge je Hand statt Notenzahl): einmalig alles neu bewerten
+        let recompute = UserDefaults.standard.integer(forKey: "difficultyVersion") < 3
+        UserDefaults.standard.set(3, forKey: "difficultyVersion")
+        for i in songs.indices where songs[i].difficulty == nil || recompute {
             if let s = try? MidiSong.load(url: url(for: songs[i])) {
                 songs[i].difficulty = s.difficulty
                 changed = true
@@ -169,6 +176,14 @@ final class LibraryStore: ObservableObject {
         songs.append(e)
         save()
         return e
+    }
+
+    func markCatalog(_ entry: SongEntry, source: String, license: String, composer: String) {
+        guard let i = songs.firstIndex(where: { $0.id == entry.id }) else { return }
+        songs[i].sourceURL = source
+        songs[i].license = license
+        songs[i].composer = composer
+        save()
     }
 
     func delete(_ entry: SongEntry) {

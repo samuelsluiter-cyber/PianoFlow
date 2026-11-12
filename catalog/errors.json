@@ -1,0 +1,27 @@
+[
+ {
+  "title": "Das Wohltemperierte Clavier II, Fuga IX",
+  "midi": "https://www.mutopiaproject.org/ftp/BachJS/BWV878/f9/f9.mid",
+  "error": "vermutlich vierhändig/Ensemble (zu viele unspielbare Griffe)"
+ },
+ {
+  "title": "Prélude 10",
+  "midi": "https://www.mutopiaproject.org/ftp/ChopinFF/O28/Chop-28-10/Chop-28-10.mid",
+  "error": "vermutlich vierhändig/Ensemble (zu viele unspielbare Griffe)"
+ },
+ {
+  "title": "Trois Marches militaires",
+  "midi": "https://www.mutopiaproject.org/ftp/SchubertF/D733/SchubertF-D733-1-TroisMarches/SchubertF-D733-1-TroisMarches.mid",
+  "error": "vermutlich vierhändig/Ensemble (zu viele unspielbare Griffe)"
+ },
+ {
+  "title": "Trois Marches militaires",
+  "midi": "https://www.mutopiaproject.org/ftp/SchubertF/D733/SchubertF-D733-2-TroisMarches/SchubertF-D733-2-TroisMarches.mid",
+  "error": "vermutlich vierhändig/Ensemble (zu viele unspielbare Griffe)"
+ },
+ {
+  "title": "Trois Marches militaires",
+  "midi": "https://www.mutopiaproject.org/ftp/SchubertF/D733/SchubertF-D733-3-TroisMarches/SchubertF-D733-3-TroisMarches.mid",
+  "error": "vermutlich vierhändig/Ensemble (zu viele unspielbare Griffe)"
+ }
+]

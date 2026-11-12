@@ -638,6 +638,33 @@ struct LessonView: View {
                     tempoPill("🐇 100%", val: 1.0)
                 }
 
+                // Beschriftung der Noten (Namen, Do-Re-Mi, Fingersatz …)
+                Menu {
+                    Picker("Beschriftung", selection: $engine.labelMode) {
+                        ForEach(LabelMode.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    Label(engine.labelMode == .none ? "Ohne Namen" : engine.labelMode.rawValue, systemImage: "textformat.abc")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .menuStyle(.button)
+                .fixedSize()
+                .frame(height: 38)
+                .help("Was in den Noten und auf den Tasten steht")
+
+                // Metronom
+                Button {
+                    engine.metronome.toggle()
+                } label: {
+                    Image(systemName: "metronome.fill")
+                        .font(.headline)
+                        .frame(width: 38, height: 38)
+                }
+                .buttonStyle(.bordered)
+                .tint(engine.metronome ? .yellow : .secondary)
+                .help(engine.metronome ? "Metronom aus (M)" : "Metronom an (M)")
+
                 // Weiter zum nächsten Takt
                 Button {
                     goToNextBar()

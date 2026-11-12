@@ -55,7 +55,7 @@ struct Score {
         beatGroup = compound ? 3 * tpp : (den >= 8 ? 4 : tpp)
         pulseTimes = song.pulseTimes
         let majorRoot = analysis.minor ? (analysis.keyRoot + 3) % 12 : analysis.keyRoot
-        fifths = [0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5][((majorRoot % 12) + 12) % 12]
+        fifths = song.keyFifths ?? [0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5][((majorRoot % 12) + 12) % 12]
         build(song)
     }
 

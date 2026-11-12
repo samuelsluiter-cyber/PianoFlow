@@ -26,6 +26,19 @@ struct PianoFlowApp: App {
                 let s = try MidiSong.load(url: URL(fileURLWithPath: args[i + 1]))
                 let right = s.notes.filter { $0.hand == .right }.count
                 let fingers = s.fingers.prefix(12).map(String.init).joined(separator: " ")
+                var bad = 0, groups = 0
+                var k = 0
+                while k < s.notes.count {
+                    var j = k + 1
+                    while j < s.notes.count, s.notes[j].start - s.notes[k].start < 0.035 { j += 1 }
+                    for h in [Hand.left, .right] {
+                        let ps = s.notes[k..<j].filter { $0.hand == h }.map { Int($0.pitch) }
+                        if let a = ps.min(), let b = ps.max(), b - a > 14 { bad += 1 }
+                    }
+                    groups += 1
+                    k = j
+                }
+                print("Haende: \(bad) unspielbare Griffe in \(groups) Anschlaegen, Score \(String(format: "%.2f", s.difficultyScore))")
                 print("OK \(s.title): \(s.notes.count) Noten (R \(right) / L \(s.notes.count - right)), \(String(format: "%.1f", s.duration)) s, \(s.timeSignature), \(Int(s.bpm)) BPM, \(s.barTimes.count) Takte, Schwierigkeit \(s.difficulty), Pedal \(s.pedalSpans.count), Finger: \(fingers)")
                 exit(0)
             } catch {
@@ -51,6 +64,25 @@ struct PianoFlowApp: App {
             if let s = try? MidiSong.load(url: URL(fileURLWithPath: args[i + 1])) {
                 NotationRenderTool.render(song: s, out: URL(fileURLWithPath: args[i + 2]),
                                           zoom: i + 3 < args.count ? Double(args[i + 3]) ?? 9 : 9)
+            }
+            exit(0)
+        }
+        // Test: Katalog-Download in eine Bibliothek (PF_LIBRARY_DIR setzen!) und Persistenz prüfen
+        if let i = args.firstIndex(of: "--catalog-test"), i + 1 < args.count, let k = Int(args[i + 1]) {
+            MainActor.assumeIsolated {
+                let lib = LibraryStore()
+                let store = CatalogStore()
+                guard k < store.songs.count else { print("Katalog leer"); exit(1) }
+                let s = store.songs[k]
+                var done = false
+                Task { @MainActor in
+                    let id = await store.download(s, into: lib)
+                    print("Download \(s.title): \(id.map { "ok \($0)" } ?? "FEHLER \(store.failed[s.midi] ?? "")")")
+                    done = true
+                }
+                while !done { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+                print("Im Speicher:", lib.songs.map(\.title))
+                print("Von Platte:", LibraryStore().songs.map(\.title))
             }
             exit(0)
         }

@@ -12,7 +12,7 @@ extension Notification.Name {
 }
 
 enum NavItem: Hashable {
-    case dashboard, freePlay, exercises, reading, ear
+    case dashboard, freePlay, exercises, reading, ear, catalog, theory
     case song(UUID)
 }
 
@@ -50,14 +50,16 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
-                Section("Training") {
+                Section("Start") {
                     Label("Übersicht", systemImage: "chart.bar.xaxis").tag(NavItem.dashboard)
+                    Label("Songs entdecken", systemImage: "sparkle.magnifyingglass").tag(NavItem.catalog)
                     Label("Freies Spielen", systemImage: "pianokeys").tag(NavItem.freePlay)
-                    if !simple {
-                        Label("Übungen & Tonleitern", systemImage: "figure.strengthtraining.traditional").tag(NavItem.exercises)
-                        Label("Notenlesen-Trainer", systemImage: "eye").tag(NavItem.reading)
-                        Label("Gehörtraining", systemImage: "ear").tag(NavItem.ear)
-                    }
+                }
+                Section("Üben & Lernen") {
+                    Label("Notenlesen", systemImage: "eye").tag(NavItem.reading)
+                    Label("Tonleitern, Hanon & Technik", systemImage: "figure.strengthtraining.traditional").tag(NavItem.exercises)
+                    Label("Musiktheorie", systemImage: "graduationcap").tag(NavItem.theory)
+                    Label("Gehörtraining", systemImage: "ear").tag(NavItem.ear)
                 }
                 Section("Songs (\(library.songs.count))") {
                     ForEach(filtered) { s in
@@ -116,6 +118,8 @@ struct ContentView: View {
         case .exercises?: ExerciseView()
         case .reading?: ReadingTrainerView()
         case .ear?: EarTrainerView()
+        case .catalog?: CatalogView { selection = .song($0) }
+        case .theory?: TheoryView()
         case .song(let id)?:
             if let entry = library.songs.first(where: { $0.id == id }) {
                 PlayerContainer(entry: entry).id(id)

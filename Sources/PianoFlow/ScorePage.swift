@@ -366,6 +366,14 @@ enum NotationRenderTool {
                 }
             }
         }
+        if let tab = ProcessInfo.processInfo.environment["PF_THEORY"], let t = TheoryTab(rawValue: tab) {
+            UserDefaults.standard.set(t.rawValue, forKey: "theoryTab")
+            let r = ImageRenderer(content: TheoryView().frame(width: 1100, height: 720).background(Color(white: 0.12)).preferredColorScheme(.dark))
+            r.scale = 1.2
+            if let img = r.nsImage, let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+               let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: out); print("OK theory") }
+            return
+        }
         if let v = ProcessInfo.processInfo.environment["PF_VIEW"], let mode = ViewMode(rawValue: v) {
             engine.viewMode = mode
             engine.loopBars(4, 5)
@@ -382,7 +390,7 @@ enum NotationRenderTool {
         let rows = PageLayoutCache.layout(score: engine.notation, width: width, ls: ls, margin: ls * 2.8)
         let rowH = GrandStaff.height(ls: ls) + ls * 1.5
         let view = VStack(spacing: 0) {
-            ForEach(rows.prefix(6)) { row in
+            ForEach(rows.dropFirst(Int(ProcessInfo.processInfo.environment["PF_FROMROW"] ?? "0") ?? 0).prefix(6)) { row in
                 PageRowView(engine: engine, row: row, ls: ls).frame(width: width, height: rowH)
             }
         }

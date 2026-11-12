@@ -57,7 +57,11 @@ struct SongAnalysis {
     let rhRange: String
     let lhRange: String
 
-    var keyName: String { ChordNamer.rootNames[keyRoot] + (minor ? "-Moll" : "-Dur") }
+    var keyName: String {
+        let majorNames = ["C", "Des", "D", "Es", "E", "F", "Fis", "G", "As", "A", "B", "H"]
+        let minorNames = ["C", "Cis", "D", "Es", "E", "F", "Fis", "G", "Gis", "A", "B", "H"]
+        return (minor ? minorNames : majorNames)[keyRoot] + (minor ? "-Moll" : "-Dur")
+    }
 
     func segment(at t: Double) -> HarmonySegment? {
         var lo = 0, hi = segments.count
@@ -112,7 +116,14 @@ enum SongAnalyzer {
                 if r > bestKey.r { bestKey = (root, minor, r) }
             }
         }
-        // Moll mit Leitton-Hinweis bestätigen: Schlussakkord zählt mit
+        // Tonart aus der MIDI-Datei hat Vorrang; Dur oder paralleles Moll entscheidet das Tonprofil
+        if let f = song.keyFifths {
+            let major = ((f * 7) % 12 + 12) % 12
+            let minorRoot = (major + 9) % 12
+            let rMaj = correlation(hist, (0..<12).map { majorProfile[($0 - major + 12) % 12] })
+            let rMin = correlation(hist, (0..<12).map { minorProfile[($0 - minorRoot + 12) % 12] })
+            bestKey = rMin > rMaj ? (minorRoot, true, rMin) : (major, false, rMaj)
+        }
         let keyRoot = bestKey.root
         let minor = bestKey.minor
 

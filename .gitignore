@@ -5,3 +5,4 @@ __pycache__/
 *.bak
 *.backup-*
 backups/
+.catalog-cache/

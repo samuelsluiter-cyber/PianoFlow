@@ -95,8 +95,9 @@ struct DashboardView: View {
                                     Label("\(s.title) – \(s.mastery.label)", systemImage: "play.circle.fill")
                                 }
                             } else {
-                                Text("Importiere einen Song oder starte mit einer Übung.").foregroundStyle(.secondary)
+                                Text("Hol dir einen Song aus dem Katalog oder starte mit einer Übung.").foregroundStyle(.secondary)
                             }
+                            Button { select(.catalog) } label: { Label("Kostenlose Songs entdecken", systemImage: "sparkle.magnifyingglass") }
                             Button { select(.exercises) } label: { Label("Aufwärmen: Tonleitern & Hanon", systemImage: "flame") }
                             Button { select(.reading) } label: { Label("5 Minuten Notenlesen", systemImage: "eye") }
                             Button { select(.ear) } label: { Label("Gehörtraining", systemImage: "ear") }
