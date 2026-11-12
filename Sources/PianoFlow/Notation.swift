@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreText
 
 // MARK: - Notensatz-Modell
 //
@@ -390,10 +391,16 @@ struct NotationPainter {
     @discardableResult
     func clefsAndSignature(_ ctx: GraphicsContext, x: CGFloat, fifths: Int, num: Int, den: Int, showTime: Bool) -> CGFloat {
         var cx = x + ls * 0.6
-        ctx.draw(Text("𝄞").font(.custom("Apple Symbols", size: ls * 6.6)).foregroundColor(ink),
-                 at: CGPoint(x: cx + ls * 1.2, y: g.trebleTop + ls * 2.15))
-        ctx.draw(Text("𝄢").font(.custom("Apple Symbols", size: ls * 4.2)).foregroundColor(ink),
-                 at: CGPoint(x: cx + ls * 1.25, y: g.bassTop + ls * 1.55))
+        // Violinschlüssel: Ausdehnung wie im Druck (Bravura-Maße), bezogen auf die G-Linie (2. von unten)
+        let gLine = g.trebleBottom - ls
+        let tH = ls * 7.02
+        let tW = tH * ClefGlyphs.treble.aspect
+        ClefGlyphs.treble.draw(ctx, in: CGRect(x: cx, y: gLine - ls * 4.39, width: tW, height: tH), color: ink)
+        // Bassschlüssel: bezogen auf die F-Linie (4. von unten), Punkte links und rechts der Linie
+        let fLine = g.bassTop + ls
+        let bH = ls * 3.56
+        let bW = bH * ClefGlyphs.bass.aspect
+        ClefGlyphs.bass.draw(ctx, in: CGRect(x: cx, y: fLine - ls * 1.02, width: bW, height: bH), color: ink)
         cx += ls * 3.2
         // Vorzeichen der Tonart
         let sharpD = [45, 42, 46, 43, 40, 44, 41], flatD = [41, 44, 40, 43, 39, 42, 38]
@@ -867,4 +874,38 @@ extension Score {
         let natural = oct * 12 + [0, 2, 4, 5, 7, 9, 11][letter]
         return p - natural
     }
+}
+
+
+// MARK: - Notenschlüssel als Vektorpfad (aus "Apple Symbols"), exakt auf die Notenlinien skaliert
+
+struct ClefGlyph {
+    let path: Path          // auf Einheitsquadrat (0…1) normiert, y nach unten
+    let aspect: CGFloat     // Breite / Höhe
+
+    init(_ scalar: UInt32) {
+        let font = CTFontCreateWithName("Apple Symbols" as CFString, 200, nil)
+        var chars = Array(String(UnicodeScalar(scalar)!).utf16)
+        var glyphs = [CGGlyph](repeating: 0, count: chars.count)
+        CTFontGetGlyphsForCharacters(font, &chars, &glyphs, chars.count)
+        guard let cg = CTFontCreatePathForGlyph(font, glyphs[0], nil) else {
+            path = Path(); aspect = 0.4; return
+        }
+        var p = Path(cg).applying(CGAffineTransform(scaleX: 1, y: -1))
+        let b = p.boundingRect
+        p = p.applying(CGAffineTransform(translationX: -b.minX, y: -b.minY))
+        p = p.applying(CGAffineTransform(scaleX: 1 / max(b.width, 1), y: 1 / max(b.height, 1)))
+        path = p
+        aspect = b.height > 0 ? b.width / b.height : 0.4
+    }
+
+    func draw(_ ctx: GraphicsContext, in r: CGRect, color: Color) {
+        let t = CGAffineTransform(scaleX: r.width, y: r.height).concatenating(CGAffineTransform(translationX: r.minX, y: r.minY))
+        ctx.fill(path.applying(t), with: .color(color))
+    }
+}
+
+enum ClefGlyphs {
+    static let treble = ClefGlyph(0x1D11E)
+    static let bass = ClefGlyph(0x1D122)
 }

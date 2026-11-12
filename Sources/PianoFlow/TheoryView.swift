@@ -24,8 +24,8 @@ struct TheoryItem: Identifiable, Hashable {
 
 enum TheoryContent {
     static let roots = ["C", "Des", "D", "Es", "E", "F", "Fis", "G", "As", "A", "B", "H"]
-    /// Moll-Grundtöne in üblicher Schreibweise (cis, dis, gis statt des, es, as)
-    static let minorRoots = ["c", "cis", "d", "es", "e", "f", "fis", "g", "gis", "a", "b", "h"]
+    /// Moll-Grundtöne passend zum Zirkel (cis, dis, gis statt des, es, as; dis = Fis-Dur)
+    static let minorRoots = ["c", "cis", "d", "dis", "e", "f", "fis", "g", "gis", "a", "b", "h"]
     static let fifths = [0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5]
 
     static let intervals: [TheoryItem] = [
