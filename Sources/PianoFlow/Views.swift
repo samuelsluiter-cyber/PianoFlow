@@ -25,7 +25,16 @@ enum SongSort: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @EnvironmentObject var library: LibraryStore
-    @State private var selection: NavItem? = .dashboard
+    @State private var selection: NavItem? = {
+        // Debug/Test: direkt auf einer Seite starten (PF_START=theory|catalog|reading|exercises)
+        switch ProcessInfo.processInfo.environment["PF_START"] {
+        case "theory": return .theory
+        case "catalog": return .catalog
+        case "reading": return .reading
+        case "exercises": return .exercises
+        default: return .dashboard
+        }
+    }()
     @State private var importing = false
     @State private var renaming: SongEntry?
     @State private var newTitle = ""

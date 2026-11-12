@@ -24,6 +24,8 @@ struct TheoryItem: Identifiable, Hashable {
 
 enum TheoryContent {
     static let roots = ["C", "Des", "D", "Es", "E", "F", "Fis", "G", "As", "A", "B", "H"]
+    /// Moll-Grundtöne in üblicher Schreibweise (cis, dis, gis statt des, es, as)
+    static let minorRoots = ["c", "cis", "d", "es", "e", "f", "fis", "g", "gis", "a", "b", "h"]
     static let fifths = [0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5]
 
     static let intervals: [TheoryItem] = [
@@ -79,7 +81,8 @@ enum TheoryContent {
 struct TheoryView: View {
     @AppStorage("theoryTab") private var tab: TheoryTab = .intervals
     @State private var root = 0
-    @State private var selected: TheoryItem = TheoryContent.intervals[4]
+    /// Auswahl je Tab (sonst zeigt z. B. "Tonleitern" noch das Intervall von vorher)
+    @State private var picks: [TheoryTab: String] = [.intervals: "Große Terz", .scales: "Dur", .chords: "Dur"]
     @State private var lit: Set<Int> = []         // gerade klingende Tasten
     @State private var inversion = 0
     @State private var extraTitle: String?
@@ -87,6 +90,15 @@ struct TheoryView: View {
 
     private var audio: AudioEngine { AppServices.shared.audio }
     private var fifths: Int { TheoryContent.fifths[root] }
+
+    private var selected: TheoryItem {
+        items.first { $0.id == picks[tab] } ?? items.first ?? TheoryContent.intervals[4]
+    }
+
+    private func clearExtra() {
+        extraPitches = nil
+        extraTitle = nil
+    }
 
     private var items: [TheoryItem] {
         switch tab {
@@ -121,7 +133,10 @@ struct TheoryView: View {
             .padding(14)
             Divider()
             if tab == .circle {
-                circleOfFifths
+                ScrollView {
+                    circleOfFifths
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
             } else {
                 HStack(alignment: .top, spacing: 0) {
                     list.frame(width: 300)
@@ -131,11 +146,10 @@ struct TheoryView: View {
             }
         }
         .navigationTitle("Musiktheorie")
-        .onChange(of: tab) { _, t in
-            extraPitches = nil
-            if t != .circle, let first = items.first(where: { $0.id == (t == .chords ? "Dur" : t == .scales ? "Dur" : "Große Terz") }) {
-                selected = first
-            }
+        .onChange(of: tab) { _, _ in
+            clearExtra()
+            inversion = 0
+            lit = []
         }
     }
 
@@ -144,7 +158,7 @@ struct TheoryView: View {
             ForEach(0..<12, id: \.self) { r in
                 Button {
                     root = r
-                    extraPitches = nil
+                    clearExtra()
                     play()
                 } label: {
                     Text(TheoryContent.roots[r])
@@ -160,8 +174,12 @@ struct TheoryView: View {
     }
 
     private var list: some View {
-        List(items, selection: Binding(get: { selected.id }, set: { id in
-            if let it = items.first(where: { $0.id == id }) { selected = it; extraPitches = nil; inversion = 0; play() }
+        List(items, selection: Binding<String?>(get: { picks[tab] }, set: { id in
+            guard let id else { return }
+            picks[tab] = id
+            clearExtra()
+            inversion = 0
+            play()
         })) { it in
             HStack {
                 Text(it.id).font(.body.weight(.medium))
@@ -277,39 +295,8 @@ struct TheoryView: View {
 
     private var circleOfFifths: some View {
         HStack(alignment: .top, spacing: 30) {
-            GeometryReader { geo in
-                let size = min(geo.size.width, geo.size.height)
-                let c = CGPoint(x: geo.size.width / 2, y: size / 2)
-                ZStack {
-                    Circle().stroke(Color.white.opacity(0.12), lineWidth: 1).frame(width: size * 0.86, height: size * 0.86).position(c)
-                    Circle().stroke(Color.white.opacity(0.08), lineWidth: 1).frame(width: size * 0.52, height: size * 0.52).position(c)
-                    ForEach(0..<12, id: \.self) { k in
-                        let pc = (k * 7) % 12
-                        let ang = Double(k) / 12 * 2 * .pi - .pi / 2
-                        let outer = CGPoint(x: c.x + CGFloat(cos(ang)) * size * 0.43, y: c.y + CGFloat(sin(ang)) * size * 0.43)
-                        let inner = CGPoint(x: c.x + CGFloat(cos(ang)) * size * 0.26, y: c.y + CGFloat(sin(ang)) * size * 0.26)
-                        let minor = (pc + 9) % 12
-                        Button { selectKey(pc) } label: {
-                            Text(TheoryContent.roots[pc])
-                                .font(.system(size: size * 0.05, weight: .bold, design: .rounded))
-                                .frame(width: size * 0.12, height: size * 0.12)
-                                .background(Circle().fill(root == pc ? Color.accentColor : Color.white.opacity(0.08)))
-                        }
-                        .buttonStyle(.plain)
-                        .position(outer)
-                        Button { selectKey(minor, minorKey: true) } label: {
-                            Text(TheoryContent.roots[minor].lowercased())
-                                .font(.system(size: size * 0.035, weight: .semibold, design: .rounded))
-                                .frame(width: size * 0.09, height: size * 0.09)
-                                .background(Circle().fill(Color.white.opacity(0.05)))
-                        }
-                        .buttonStyle(.plain)
-                        .position(inner)
-                    }
-                    Text("Dur außen\nmoll innen").font(.caption).multilineTextAlignment(.center).foregroundStyle(.secondary).position(c)
-                }
-            }
-            .frame(minWidth: 380, maxWidth: 520)
+            circleDial
+
 
             VStack(alignment: .leading, spacing: 14) {
                 Text("\(TheoryContent.roots[root])-Dur").font(.system(size: 30, weight: .bold, design: .rounded))
@@ -320,21 +307,57 @@ struct TheoryView: View {
                     let order = f > 0 ? ["Fis", "Cis", "Gis", "Dis", "Ais", "Eis"] : ["B", "Es", "As", "Des", "Ges", "Ces"]
                     Text("Vorzeichen: " + order.prefix(abs(f)).joined(separator: ", ")).font(.title3).foregroundStyle(.secondary)
                 }
-                Text("Paralleles Moll: \(TheoryContent.roots[(root + 9) % 12].lowercased())-Moll (gleiche Vorzeichen)")
+                Text("Paralleles Moll: \(TheoryContent.minorRoots[(root + 9) % 12])-Moll (gleiche Vorzeichen)")
                     .foregroundStyle(.secondary)
                 TheoryKeyboard(pitches: TheoryContent.scales[0].steps.map { 60 + root + $0 }, lit: lit, name: name)
                     .frame(height: 130)
-                Button { selected = TheoryContent.scales[0]; extraPitches = nil; play(TheoryContent.scales[0].steps.map { 60 + root + $0 }) } label: {
+                Button { play(TheoryContent.scales[0].steps.map { 60 + root + $0 }) } label: {
                     Label("Tonleiter anhören", systemImage: "play.fill")
                 }
                 .buttonStyle(.borderedProminent)
                 Text("Merksatz: Im Uhrzeigersinn kommt mit jedem Schritt (eine Quinte höher) ein Kreuz dazu – gegen den Uhrzeigersinn ein B.\nKreuze: „Geh Du Alter Esel Hole Fische“ (G, D, A, E, H, Fis) · Bs: „Frische Brötchen Essen Asse Des Gesangs“")
                     .font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 700, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(24)
+    }
+
+    /// Zifferblatt mit fester Größe (kein GeometryReader – der lieferte beim Aufbau ungültige Maße)
+    private var circleDial: some View {
+        let size: CGFloat = 440
+        let c = CGPoint(x: size / 2, y: size / 2)
+        return ZStack {
+            Circle().stroke(Color.white.opacity(0.12), lineWidth: 1).frame(width: size * 0.86, height: size * 0.86).position(c)
+            Circle().stroke(Color.white.opacity(0.08), lineWidth: 1).frame(width: size * 0.52, height: size * 0.52).position(c)
+            ForEach(0..<12, id: \.self) { k in
+                let pc = (k * 7) % 12
+                let ang = Double(k) / 12 * 2 * .pi - .pi / 2
+                let outer = CGPoint(x: c.x + CGFloat(cos(ang)) * size * 0.43, y: c.y + CGFloat(sin(ang)) * size * 0.43)
+                let inner = CGPoint(x: c.x + CGFloat(cos(ang)) * size * 0.26, y: c.y + CGFloat(sin(ang)) * size * 0.26)
+                let minor = (pc + 9) % 12
+                Button { selectKey(pc) } label: {
+                    Text(TheoryContent.roots[pc])
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .frame(width: 54, height: 54)
+                        .background(Circle().fill(root == pc ? Color.accentColor : Color.white.opacity(0.08)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .position(outer)
+                Button { selectKey(minor, minorKey: true) } label: {
+                    Text(TheoryContent.minorRoots[minor])
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .frame(width: 40, height: 40)
+                        .background(Circle().fill(root == (minor + 3) % 12 ? Color.accentColor.opacity(0.45) : Color.white.opacity(0.05)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .position(inner)
+            }
+            Text("Dur außen\nmoll innen").font(.caption).multilineTextAlignment(.center).foregroundStyle(.secondary).position(c)
+        }
+        .frame(width: size, height: size)
     }
 
     private func selectKey(_ pc: Int, minorKey: Bool = false) {

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import QuartzCore
 
@@ -80,6 +81,7 @@ struct PianoStage: View {
     @ObservedObject var engine: PracticeEngine
     @State private var dragStartBar: Int? = nil
     @State private var pinchBase: Double? = nil
+    @State private var wheel = WheelMonitor()
 
     static func keyboardHeight(_ size: CGSize) -> CGFloat { min(170, max(90, size.height * 0.2)) }
 
@@ -112,6 +114,44 @@ struct PianoStage: View {
     }
 
     var body: some View {
+        stageContent
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { wheel.frame = g.frame(in: .global) }
+                    .onChange(of: g.frame(in: .global)) { _, f in wheel.frame = f }
+            })
+            .onAppear { wheel.install { ev in handleScroll(ev) } }
+            .onDisappear { wheel.remove() }
+    }
+
+    /// Mausrad / Trackpad: spulen (Noten, Wasserfall), ⌘ + Rad = Zoom
+    private func handleScroll(_ ev: NSEvent) -> Bool {
+        let precise = ev.hasPreciseScrollingDeltas
+        let dy = ev.scrollingDeltaY, dx = ev.scrollingDeltaX
+        let zoomKey = ev.modifierFlags.contains(.command) || ev.modifierFlags.contains(.option)
+        if engine.viewMode == .page {
+            guard zoomKey else { return false }          // normales Scrollen macht die Seite selbst
+            let z = Prefs.double("pageZoom", 11)
+            Prefs.set("pageZoom", min(18, max(4, z + (precise ? dy * 0.05 : dy * 0.6))))
+            return true
+        }
+        if zoomKey {
+            let f = 1 - (precise ? dy * 0.01 : dy * 0.08)
+            engine.visibleSeconds = min(12, max(1.5, engine.visibleSeconds * max(0.5, min(1.5, f))))
+            return true
+        }
+        let d = abs(dx) > abs(dy) ? dx : dy
+        guard d != 0 else { return true }
+        if engine.isPlaying { engine.togglePlay() }
+        let beat = engine.song.pulseTimes.count > 1 ? engine.song.pulseTimes[1] - engine.song.pulseTimes[0] : 0.5
+        // Rad nach unten / Wischen nach oben = vorwärts im Stück
+        let dt = precise ? -Double(d) * engine.visibleSeconds / 500 : -Double(d.sign == .minus ? -1 : 1) * beat
+        let target = min(engine.song.duration, max(-PracticeEngine.leadIn, engine.currentTime + dt))
+        engine.seek(to: target)
+        return true
+    }
+
+    @ViewBuilder private var stageContent: some View {
         if engine.viewMode == .page {
             GeometryReader { geo in
                 VStack(spacing: 0) {
@@ -719,4 +759,29 @@ struct SplitMix {
         z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
         return z ^ (z >> 31)
     }
+}
+
+
+/// Lauscht auf Scroll-Ereignisse über einem bestimmten Bereich des Fensters
+final class WheelMonitor {
+    var frame: CGRect = .zero
+    private var token: Any?
+
+    func install(_ handler: @escaping (NSEvent) -> Bool) {
+        remove()
+        token = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] ev in
+            guard let self, let view = ev.window?.contentView, ev.window?.isKeyWindow ?? true else { return ev }
+            let p = ev.locationInWindow
+            let pt = CGPoint(x: p.x, y: view.bounds.height - p.y)   // SwiftUI .global: Ursprung oben links
+            guard self.frame.contains(pt) else { return ev }
+            return handler(ev) ? nil : ev
+        }
+    }
+
+    func remove() {
+        if let t = token { NSEvent.removeMonitor(t) }
+        token = nil
+    }
+
+    deinit { remove() }
 }
