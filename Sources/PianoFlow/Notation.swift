@@ -153,6 +153,11 @@ struct Score {
             barOfSongBar[extra] = bars.count - 1
             extra += 1
         }
+        // Leere Schlusstakte (nur Pausen nach der letzten Note) entfernen
+        while bars.count > 1, let last = bars.last, last.startTick >= lastTick {
+            bars.removeLast()
+            barOfSongBar = barOfSongBar.filter { $0.value < bars.count }
+        }
         let scoreEnd = bars.last?.endTick ?? barTicks
 
         var out: [ScoreItem] = []
@@ -246,7 +251,7 @@ struct Score {
             let m = mark(sum[b] / Double(cnt[b]))
             if m != last && (varies || last.isEmpty) { res[b] = m; last = m }
         }
-        if !varies, mean > 85, mean < 104 { return [:] }   // Standard-Velocity (z. B. 90-100) ist keine Absicht
+        if !varies { return [:] }   // gleichbleibende Anschlagstärke = keine echte Dynamik in der Datei
         return res
     }
 
@@ -719,7 +724,11 @@ struct NotationPainter {
         let len = ls * 3.3
         let minLen = ls * 2.6
         let tips = heads.map { down ? $0.maxY + len : $0.minY - len }
-        guard let firstX = sxs.first, let lastX = sxs.last, lastX - firstX > 1 else { return }
+        guard let firstX = sxs.first, let lastX = sxs.last, lastX - firstX > 1 else {
+            // Zu eng für einen Balken: Hälse/Fähnchen einzeln zeichnen
+            for (k, it) in group.enumerated() { drawSingle(ctx, it, x: xs[k], style: style) }
+            return
+        }
         var slope = (tips[tips.count - 1] - tips[0]) / (lastX - firstX)
         slope = max(-0.18, min(0.18, slope))
         var y0 = tips[0]

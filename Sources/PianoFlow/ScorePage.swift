@@ -218,7 +218,7 @@ struct PageRowView: View {
     @State private var dragStart: Int?
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !engine.isPlaying)) { tl in
             Canvas { ctx, size in
                 _ = tl.date
                 draw(ctx, size: size)

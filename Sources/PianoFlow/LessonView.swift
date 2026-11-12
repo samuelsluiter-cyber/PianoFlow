@@ -450,9 +450,13 @@ struct LessonView: View {
         HStack(spacing: 12) {
             // Titel & Tonart
             HStack(spacing: 8) {
-                Text(entry.title)
+                Text(entry.title.replacingOccurrences(of: "_", with: " "))
                     .font(.headline.weight(.bold))
                     .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 260, alignment: .leading)
+                    .help(entry.title)
 
                 Text(analysis.keyName)
                     .font(.caption.bold())
@@ -464,7 +468,9 @@ struct LessonView: View {
                 Text("\(Int(song.bpm)) BPM")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .fixedSize()
             }
+            .layoutPriority(-1)
 
             Spacer()
 
@@ -473,13 +479,9 @@ struct LessonView: View {
                 Button {
                     goToPreviousBar()
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Voriger Takt")
-                    }
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
+                    Image(systemName: "chevron.left")
+                        .font(.callout.weight(.bold))
+                        .frame(width: 22, height: 20)
                 }
                 .buttonStyle(.bordered)
                 .disabled(fromBarIndex <= 0)
@@ -510,7 +512,7 @@ struct LessonView: View {
                                 .font(.subheadline.bold())
                         }
 
-                        Text("(\(barsCount) Takte)")
+                        Text("von \(barsCount)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
 
@@ -529,13 +531,9 @@ struct LessonView: View {
                 Button {
                     goToNextBar()
                 } label: {
-                    HStack(spacing: 4) {
-                        Text("Nächster Takt")
-                        Image(systemName: "chevron.right")
-                    }
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
+                    Image(systemName: "chevron.right")
+                        .font(.callout.weight(.bold))
+                        .frame(width: 22, height: 20)
                 }
                 .buttonStyle(.bordered)
                 .disabled(toBarIndex >= barsCount - 1)
@@ -600,7 +598,7 @@ struct LessonView: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                Text(title)
+                Text(title).fixedSize()
             }
             .font(.caption2.weight(engine.viewMode == mode ? .semibold : .regular))
             .padding(.horizontal, 8)

@@ -60,6 +60,15 @@ struct PianoFlowApp: App {
             exit(0)
         }
         // Debug: Notenblatt als PNG rendern  --render <midi> <out.png> [zoom]
+        // Übung rendern: --render-exercise <Nr> <out.png>
+        if let i = args.firstIndex(of: "--render-exercise"), i + 2 < args.count, let k = Int(args[i + 1]),
+           k < ExerciseKind.allCases.count {
+            let kind = ExerciseKind.allCases[k]
+            let s = ExerciseFactory.make(ExerciseConfig(kind: kind, root: 0, octaves: 1, hands: .both, bpm: 90))
+            print(kind.rawValue)
+            NotationRenderTool.render(song: s, out: URL(fileURLWithPath: args[i + 2]), zoom: 9)
+            exit(0)
+        }
         if let i = args.firstIndex(of: "--render"), i + 2 < args.count {
             if let s = try? MidiSong.load(url: URL(fileURLWithPath: args[i + 1])) {
                 NotationRenderTool.render(song: s, out: URL(fileURLWithPath: args[i + 2]),

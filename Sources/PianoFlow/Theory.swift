@@ -341,8 +341,47 @@ enum ExerciseFactory {
         notes.sort { ($0.start, $0.pitch) < ($1.start, $1.pitch) }
         let total = (notes.map(\.end).max() ?? 0) / beat
         let pulses = stride(from: 0.0, through: total + 1, by: 1.0).map { $0 * beat }
-        return MidiSong.build(title: c.title, notes: notes, bpm: c.bpm,
-                              pulseTimes: pulses, pulsesPerBar: 4, timeSignature: "4/4")
+        var song = MidiSong.build(title: c.title, notes: notes, bpm: c.bpm,
+                                  pulseTimes: pulses, pulsesPerBar: 4, timeSignature: "4/4")
+        // Übungen kennen ihre Tonart: Vorzeichen direkt setzen statt raten
+        let minorKind = c.kind == .minorScale || c.kind == .minorArpeggio
+        let majorRoot = minorKind ? (c.root + 3) % 12 : c.root
+        song.keyFifths = c.kind == .chromatic ? 0 : [0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5][((majorRoot % 12) + 12) % 12]
+        Self.textbookFingering(&song, kind: c.kind, root: c.root)
+        return song
+    }
+
+    /// Lehrbuch-Fingersatz für Tonleitern (C-, G-, D-, A-, E-Typ), Arpeggien und Fünffinger-Übung
+    static func textbookFingering(_ song: inout MidiSong, kind: ExerciseKind, root: Int) {
+        let whiteKeyTonic = [0, 7, 2, 9, 4].contains(((root % 12) + 12) % 12)
+        for hand in [Hand.right, .left] {
+            let idxs = song.notes.indices.filter { song.notes[$0].hand == hand }
+            let uniq = Array(Set(idxs.map { Int(song.notes[$0].pitch) })).sorted()
+            guard uniq.count > 1 else { continue }
+            let top = uniq.count - 1
+            func finger(_ k: Int) -> Int? {
+                switch kind {
+                case .majorScale, .minorScale:
+                    guard whiteKeyTonic else { return nil }
+                    if k == top { return hand == .right ? 5 : 1 }
+                    return (hand == .right ? [1, 2, 3, 1, 2, 3, 4] : [5, 4, 3, 2, 1, 3, 2])[k % 7]
+                case .majorArpeggio, .minorArpeggio:
+                    guard whiteKeyTonic else { return nil }
+                    if k == top { return hand == .right ? 5 : 1 }
+                    if hand == .right { return [1, 2, 3][k % 3] }
+                    return k == 0 ? 5 : [4, 2, 1][(k - 1) % 3]
+                case .fiveFinger:
+                    guard uniq.count <= 5 else { return nil }
+                    return hand == .right ? k + 1 : 5 - k
+                default: return nil
+                }
+            }
+            for i in idxs {
+                if let k = uniq.firstIndex(of: Int(song.notes[i].pitch)), let f = finger(k), i < song.fingers.count {
+                    song.fingers[i] = f
+                }
+            }
+        }
     }
 }
 

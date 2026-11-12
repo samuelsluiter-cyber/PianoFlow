@@ -18,12 +18,14 @@ struct KeyLayout {
     private let whiteIndex: [Int: Int]
 
     init(range: ClosedRange<Int>, width: CGFloat, originX: CGFloat = 0) {
-        low = range.lowerBound
+        // Beginnt der Bereich mit einer schwarzen Taste, die weiße Taste links davon mitnehmen
+        let lowWhite = KeyLayout.isBlack(range.lowerBound) ? range.lowerBound - 1 : range.lowerBound
+        low = lowWhite
         high = range.upperBound
         self.originX = originX
         var idx: [Int: Int] = [:]
         var c = 0
-        for p in range where !KeyLayout.isBlack(p) {
+        for p in lowWhite...range.upperBound where !KeyLayout.isBlack(p) {
             idx[p] = c
             c += 1
         }
@@ -469,7 +471,7 @@ struct PianoStage: View {
     static func sheetPlayX(_ engine: PracticeEngine, rect: CGRect) -> CGFloat {
         let ls = max(5, min(15, rect.height / 26))
         let contentMinX = rect.minX + ls * 2.4 + NotationPainter.headerWidth(ls: ls, fifths: engine.notation.fifths, showTime: true)
-        return max(contentMinX + ls * 4, rect.minX + rect.width * 0.24)
+        return min(rect.maxX - ls * 4, max(contentMinX + ls * 4, rect.minX + rect.width * 0.24))
     }
 
     private func drawSheet(_ ctx: GraphicsContext, rect: CGRect, listen: Bool) {
@@ -491,7 +493,8 @@ struct PianoStage: View {
         let playX = Self.sheetPlayX(engine, rect: rect)
         let secondsRight = engine.visibleSeconds * 1.8
         let pps = (rect.maxX - playX) / CGFloat(secondsRight)
-        let secondsLeft = Double((playX - contentMinX) / pps)
+        guard pps > 0.5 else { return }
+        let secondsLeft = Double(max(0, playX - contentMinX) / pps)
         func x(_ time: Double) -> CGFloat { playX + CGFloat(time - t) * pps }
 
         painter.staffLines(c, from: x0, to: rect.maxX)
