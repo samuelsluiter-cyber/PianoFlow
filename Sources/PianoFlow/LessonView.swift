@@ -295,6 +295,8 @@ struct LessonView: View {
     @State private var showSettings = false
     @State private var showBarPicker = false
     @State private var monitor: Any?
+    @State private var confetti = 0
+    @AppStorage("hideKeyboardHint") private var hideKeyboardHint = false
 
     init(entry: SongEntry, song: MidiSong, analysis: SongAnalysis) {
         self.entry = entry
@@ -320,6 +322,18 @@ struct LessonView: View {
             PianoStage(engine: engine)
                 .overlay(alignment: .top) { BannerOverlay(engine: engine).padding(.top, 8) }
                 .overlay { CountdownOverlay(engine: engine) }
+                .overlay { ConfettiView(trigger: confetti) }
+                .overlay {
+                    if engine.midiSources.isEmpty && !hideKeyboardHint {
+                        GeometryReader { geo in
+                            VStack {
+                                Spacer()
+                                keyboardHint.padding(.bottom, PianoStage.keyboardHeight(geo.size) + 10)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                }
 
             // 3. Feste Bedienleiste UNTERHALB der Tastatur (kein Überlappen!)
             bottomControlsBar
@@ -361,12 +375,34 @@ struct LessonView: View {
         }
     }
 
+    /// Hinweis für alle ohne MIDI-Keyboard: so spielt man mit der Mac-Tastatur
+    private var keyboardHint: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "keyboard").font(.title3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Kein MIDI-Keyboard? Spiel mit der Tastatur:").font(.caption.bold())
+                Text("A S D F G H J K = C D E F G A H C  ·  W E T Z U = schwarze Tasten  ·  X / C = Oktave runter / hoch")
+                    .font(.caption.monospaced())
+            }
+            Button { hideKeyboardHint = true } label: { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Hinweis ausblenden")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(Capsule().fill(Color.black.opacity(0.75)))
+        .foregroundStyle(.white)
+    }
+
     // MARK: - Initial Setup
 
     private func setupInitialState() {
         engine.attach()
         engine.viewMode = .both
-        engine.labelMode = .names
+        // Einmalig: klassisches Notenbild mit Fingersatz statt Namen als Start
+        if !Prefs.bool("classicNotesIntroduced", false) {
+            Prefs.set("classicNotesIntroduced", true)
+            engine.labelMode = .fingers
+        }
         engine.mode = .wait
         engine.handSelection = .both
         engine.tempo = 0.8
@@ -386,8 +422,15 @@ struct LessonView: View {
                 e?.showBanner("Abschnitt gemeistert! ★★★")
             }
         }
+        // Jeder sauber geschaffte Loop-Durchgang wird gefeiert
+        engine.onPassCompleted = { [weak e = engine] acc in
+            guard acc >= 0.9 else { return }
+            confetti += 1
+            e?.showBanner(acc >= 0.99 ? "Fehlerfrei! 🎉 Weiter mit „Weiter →“" : "Geschafft – \(Int(acc * 100)) % richtig! 🎉")
+        }
 
         // Tastatursteuerung: Pfeil links (Takte zurück), Pfeil rechts (Takte vor), Leertaste (Play/Pause)
+        if let m = monitor { NSEvent.removeMonitor(m) }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak e = engine] ev in
             guard let e else { return ev }
             if ev.window?.firstResponder is NSText { return ev }
@@ -644,6 +687,12 @@ struct LessonView: View {
                         ForEach(LabelMode.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.inline)
+                    Divider()
+                    Picker("Notenbild", selection: $engine.kidNotes) {
+                        Text("Klassisch (wie gedruckt)").tag(false)
+                        Text("Kindernoten (Namen im Notenkopf)").tag(true)
+                    }
+                    .pickerStyle(.inline)
                 } label: {
                     Label(engine.labelMode == .none ? "Ohne Namen" : engine.labelMode.rawValue, systemImage: "textformat.abc")
                         .font(.subheadline.weight(.semibold))
@@ -707,6 +756,8 @@ struct LessonView: View {
         return Button {
             engine.handSelection = hand
             engine.restart()
+            engine.showBanner(hand == .left ? "Nur linke Hand – die rechte spielt die App" :
+                              hand == .right ? "Nur rechte Hand – die linke spielt die App" : "Beide Hände")
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon)
@@ -981,10 +1032,19 @@ struct LessonView: View {
         .frame(minWidth: 480, minHeight: 440)
     }
 
+    /// Wo hat der Schüler zuletzt Fehler gemacht? (für gezieltere KI-Tipps)
+    private var errorContext: String {
+        let errs = engine.errorsPerBar.enumerated()
+            .filter { $0.element > 0 && $0.offset >= fromBarIndex && $0.offset <= toBarIndex }
+            .map { "Takt \($0.offset + 1): \($0.element) Fehler" }
+        return errs.isEmpty ? "" : "Der Schüler hatte zuletzt Probleme in: \(errs.joined(separator: ", ")). Geh besonders darauf ein."
+    }
+
     private func loadTeacherExplanation(force: Bool) {
         let key = "bar_\(fromBarIndex)_\(toBarIndex)"
         let p = """
         Stück: \(entry.title), Tonart: \(analysis.keyName).
+        \(errorContext)
         Erkläre Takt \(fromBarIndex + 1)–\(toBarIndex + 1) (\(chordName(fromBarIndex))):
         Welche Noten und Handpositionen liegen hier? Konkreter Fingersatz und Spieltipp in der Du-Form, maximal 100 Wörter.
         """

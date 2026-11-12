@@ -162,6 +162,16 @@ struct SongRow: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            if let a = entry.bestAccuracy {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.08))
+                        Capsule().fill(masteryColor).frame(width: geo.size.width * max(0, min(1, a)))
+                    }
+                }
+                .frame(height: 3)
+                .help("Beste Genauigkeit: \(Int(a * 100)) %")
+            }
         }
         .padding(.vertical, 3)
     }
@@ -296,6 +306,7 @@ struct PlayerView: View {
                 lib?.record(songID: id, title: t, result: r, seconds: e?.takePracticeSeconds() ?? 0, mode: r.mode)
                 cb?(r)
             }
+            if let m = monitor { NSEvent.removeMonitor(m) }
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak e = engine] ev in
                 guard let e else { return ev }
                 if ev.window?.firstResponder is NSText { return ev }
@@ -884,10 +895,10 @@ struct ResultView: View {
 
     private func verdict(_ a: Double) -> String {
         switch a {
-        case 0.97...: return "Makellos. Nächstes Level."
-        case 0.9..<0.97: return "Stark – fast sauber."
-        case 0.7..<0.9: return "Solide. Problemstelle loopen, dann nochmal."
-        default: return "Tempo runter, Warte-Modus, dann wieder hoch."
+        case 0.97...: return "Wow, fehlerfrei! Bereit fürs nächste Level. 🌟"
+        case 0.9..<0.97: return "Toll gespielt – fast perfekt! 👍"
+        case 0.7..<0.9: return "Gut gemacht! Übe die rote Stelle noch mal, dann sitzt es."
+        default: return "Nicht aufgeben! Langsamer spielen (Warte-Modus) und dann Schritt für Schritt schneller. 💪"
         }
     }
 

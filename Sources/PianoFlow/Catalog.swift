@@ -56,7 +56,8 @@ final class CatalogStore: ObservableObject {
     private func load() {
         guard let url = Self.catalogURL, let data = try? Data(contentsOf: url),
               let file = try? JSONDecoder().decode(CatalogFile.self, from: data) else { return }
-        songs = file.songs
+        var seen = Set<String>()
+        songs = file.songs.filter { seen.insert($0.midi).inserted }
         generated = file.generated
     }
 

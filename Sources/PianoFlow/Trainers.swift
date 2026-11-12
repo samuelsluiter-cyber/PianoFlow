@@ -410,12 +410,18 @@ struct ReadingTrainerView: View {
 
             Canvas { ctx, size in
                 let rect = CGRect(origin: .zero, size: size)
-                ctx.fill(Path(roundedRect: rect, cornerRadius: 14), with: .color(Color(red: 0.97, green: 0.96, blue: 0.93)))
-                let g = StaffGeometry(rect: rect.insetBy(dx: 0, dy: 6), maxLS: 30)
-                let ink = Color(white: 0.12)
-                g.drawStaves(ctx, from: size.width / 2 - 260, to: size.width / 2 + 260, ink: ink)
-                let col: Color = model.feedback.map { $0.ok ? Color.hitGreen : Color.missRed } ?? ink
-                g.drawNote(ctx, p: model.target, x: size.width / 2, color: col, ink: ink)
+                ctx.fill(Path(roundedRect: rect, cornerRadius: 14), with: .color(PianoStage.paper))
+                let ink = PianoStage.sheetInk
+                let ls = min(22, size.height / 24)
+                let g = GrandStaff(ls: ls, trebleTop: (size.height - (8 + GrandStaff.gap) * ls) / 2)
+                let painter = NotationPainter(g: g, ink: ink)
+                let x0 = size.width / 2 - ls * 16, x1 = size.width / 2 + ls * 16
+                painter.staffLines(ctx, from: x0, to: x1)
+                painter.systemStart(ctx, x: x0)
+                painter.clefsAndSignature(ctx, x: x0, fifths: 0, num: 4, den: 4, showTime: false)
+                painter.barline(ctx, x: x1, final: true)
+                let col: Color = model.feedback.map { $0.ok ? Color(red: 0.05, green: 0.6, blue: 0.28) : Color(red: 0.85, green: 0.15, blue: 0.15) } ?? ink
+                painter.drawLoneNote(ctx, pitch: model.target, x: size.width / 2 + ls * 2, treble: model.target >= 60, color: col)
             }
             .frame(height: 380)
 

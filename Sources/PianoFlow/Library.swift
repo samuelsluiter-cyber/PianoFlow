@@ -304,10 +304,11 @@ final class LibraryStore: ObservableObject {
         let cal = Calendar.current
         var day = cal.startOfDay(for: Date())
         var count = 0
-        if minutes(on: day) < 1 { day = cal.date(byAdding: .day, value: -1, to: day)! }
-        while minutes(on: day) >= 1 {
+        if minutes(on: day) < 1, let prev = cal.date(byAdding: .day, value: -1, to: day) { day = prev }
+        while minutes(on: day) >= 1, count < 10_000 {
             count += 1
-            day = cal.date(byAdding: .day, value: -1, to: day)!
+            guard let prev = cal.date(byAdding: .day, value: -1, to: day) else { break }
+            day = prev
         }
         return count
     }

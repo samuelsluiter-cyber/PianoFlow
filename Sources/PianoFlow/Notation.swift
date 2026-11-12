@@ -42,6 +42,7 @@ struct Score {
     private(set) var items: [ScoreItem] = []
     private(set) var itemsByBar: [[Int]] = []
     private(set) var barOfSongBar: [Int: Int] = [:]
+    private(set) var dynamics: [Int: String] = [:]   // Index in bars -> pp … ff
 
     static let durations = [16, 12, 8, 6, 4, 3, 2, 1]
 
@@ -216,8 +217,37 @@ struct Score {
         }
 
         items = out
+        dynamics = Self.dynamics(song, bars: bars, tickFor: { tick(for: $0) }, barPos: { barPosition(ofTick: $0) })
         itemsByBar = Array(repeating: [], count: bars.count)
         for (i, it) in items.enumerated() where it.bar < itemsByBar.count { itemsByBar[it.bar].append(i) }
+    }
+
+    /// Dynamik aus der Anschlagstärke: pro Takt mittlere Lautstärke, Zeichen nur bei Wechsel
+    private static func dynamics(_ song: MidiSong, bars: [ScoreBar], tickFor: (Double) -> Int, barPos: (Int) -> Int) -> [Int: String] {
+        let vels = song.notes.map { Double($0.velocity) }
+        guard vels.count > 8 else { return [:] }
+        let mean = vels.reduce(0, +) / Double(vels.count)
+        let sd = (vels.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(vels.count)).squareRoot()
+        var sum = [Double](repeating: 0, count: bars.count), cnt = [Int](repeating: 0, count: bars.count)
+        for n in song.notes {
+            let b = barPos(tickFor(n.start))
+            guard b < bars.count else { continue }
+            sum[b] += Double(n.velocity); cnt[b] += 1
+        }
+        func mark(_ v: Double) -> String {
+            switch v { case ..<40: return "pp"; case ..<56: return "p"; case ..<70: return "mp"
+                       case ..<86: return "mf"; case ..<104: return "f"; default: return "ff" }
+        }
+        var res: [Int: String] = [:]
+        var last = ""
+        // Gleichförmige Dateien (keine echte Dynamik) bekommen nur ein Startzeichen
+        let varies = sd >= 6
+        for b in bars.indices where cnt[b] > 0 {
+            let m = mark(sum[b] / Double(cnt[b]))
+            if m != last && (varies || last.isEmpty) { res[b] = m; last = m }
+        }
+        if !varies, mean > 85, mean < 104 { return [:] }   // Standard-Velocity (z. B. 90-100) ist keine Absicht
+        return res
     }
 
     private func segments(from a: Int, to b: Int) -> [(bar: Int, from: Int, to: Int)] {
@@ -540,13 +570,46 @@ struct NotationPainter {
     struct Style {
         var color: (Int) -> Color          // pro Noten-Index
         var label: (Int, Int, Int) -> String?  // (Noten-Index, Diatonik, Alter) -> Beschriftung
-        var labelInHead: Bool
+        var labelInHead: Bool              // true = Kindernoten (Name im Kopf), false = klassisch (über/unter der Note)
     }
 
     private struct Heads {
         var centers: [CGPoint] = []
         var minY: CGFloat = .infinity
         var maxY: CGFloat = -.infinity
+        var labels: [(pitch: Int, text: String, color: Color)] = []
+    }
+
+    /// Klassisch: Fingersatz/Namen gestapelt über (Violin-) bzw. unter (Bass-System) dem Akkord, frei vom Hals
+    private func drawLabels(_ ctx: GraphicsContext, _ h: Heads, x: CGFloat, treble: Bool, down: Bool, tip: CGFloat?) {
+        guard !h.labels.isEmpty else { return }
+        let above = treble
+        let sorted = h.labels.sorted { above ? $0.pitch < $1.pitch : $0.pitch > $1.pitch }
+        var y: CGFloat
+        if above {
+            y = h.minY - ls * 1.25
+            if let tip, !down { y = min(y, tip - ls * 0.75) }
+            if treble { y = min(y, g.trebleTop - ls * 0.6) }
+        } else {
+            y = h.maxY + ls * 1.25
+            if let tip, down { y = max(y, tip + ls * 0.75) }
+            if !treble { y = max(y, min(g.bassBottom + ls * 0.6, h.maxY + ls * 1.25)) }
+        }
+        for l in sorted {
+            let digits = l.text.allSatisfy(\.isNumber)
+            let font: Font = digits
+                ? .system(size: max(8, ls * 1.05), weight: .semibold, design: .serif).italic()
+                : .system(size: max(7, ls * 0.8), weight: .medium, design: .rounded)
+            ctx.draw(Text(l.text).font(font).foregroundColor(l.color), at: CGPoint(x: x, y: y))
+            y += above ? -ls * 1.05 : ls * 1.05
+        }
+    }
+
+    /// Dynamik-Zeichen (p, mf, f …) zwischen den Systemen
+    func dynamic(_ ctx: GraphicsContext, _ mark: String, x: CGFloat) {
+        let y = g.trebleBottom + ls * 2.4
+        ctx.draw(Text(mark).font(.system(size: ls * 1.7, weight: .bold, design: .serif).italic()).foregroundColor(ink),
+                 at: CGPoint(x: x, y: y), anchor: .leading)
     }
 
     private func stemDown(_ diat: [Int], treble: Bool) -> Bool {
@@ -602,10 +665,8 @@ struct NotationPainter {
                     ctx.draw(Text(l).font(.system(size: fs, weight: .heavy, design: .rounded).width(.condensed))
                                 .foregroundColor(hollow ? col : .white),
                              at: CGPoint(x: cx, y: y + ls * 0.02))
-                } else if n > 3 || !style.labelInHead {
-                    ctx.draw(Text(l).font(.system(size: max(8, ls * 0.75), weight: .bold, design: .rounded))
-                                .foregroundColor(col),
-                             at: CGPoint(x: cx + headW * 0.62, y: y), anchor: .leading)
+                } else {
+                    h.labels.append((it.pitches[k], l, col == ink ? ink.opacity(0.8) : col))
                 }
             }
             h.centers.append(CGPoint(x: cx, y: y))
@@ -623,10 +684,13 @@ struct NotationPainter {
         ctx.fill(Path(CGRect(x: x - stemW / 2, y: min(y0, y1), width: stemW, height: abs(y1 - y0))), with: .color(color))
     }
 
-    private func drawSingle(_ ctx: GraphicsContext, _ it: ScoreItem, x: CGFloat, style: Style) {
+    func drawSingle(_ ctx: GraphicsContext, _ it: ScoreItem, x: CGFloat, style: Style) {
         let down = stemDown(it.diatonic, treble: it.treble)
         let h = drawHeads(ctx, it, x: x, down: down, style: style)
-        guard it.dur < 16, !h.centers.isEmpty else { return }
+        guard it.dur < 16, !h.centers.isEmpty else {
+            drawLabels(ctx, h, x: x, treble: it.treble, down: down, tip: nil)
+            return
+        }
         let col = style.color(it.noteIdx.first ?? 0)
         let sx = stemX(x, down: down)
         let mid = g.middleY(treble: it.treble)
@@ -636,10 +700,12 @@ struct NotationPainter {
             let tip = max(h.maxY + len, mid)
             drawStem(ctx, x: sx, from: h.minY + ls * 0.15, to: tip, color: col)
             if flags > 0 { flag(ctx, x: sx - stemW / 2, tipY: tip, down: true, count: flags, color: col) }
+            drawLabels(ctx, h, x: x, treble: it.treble, down: true, tip: tip)
         } else {
             let tip = min(h.minY - len, mid)
             drawStem(ctx, x: sx, from: h.maxY - ls * 0.15, to: tip, color: col)
             if flags > 0 { flag(ctx, x: sx + stemW / 2 - 0.3, tipY: tip, down: false, count: flags, color: col) }
+            drawLabels(ctx, h, x: x, treble: it.treble, down: false, tip: tip)
         }
     }
 
@@ -669,6 +735,10 @@ struct NotationPainter {
         }
         func lineY(_ x: CGFloat) -> CGFloat { y0 + slope * (x - firstX) }
         let col = style.color(group[0].noteIdx.first ?? 0)
+        for k in heads.indices {
+            let beamEdge = lineY(sxs[k]) + (down ? ls * 0.5 : -ls * 0.5)
+            drawLabels(ctx, heads[k], x: xs[k], treble: treble, down: down, tip: beamEdge)
+        }
         for k in sxs.indices {
             let from = down ? heads[k].minY + ls * 0.15 : heads[k].maxY - ls * 0.15
             drawStem(ctx, x: sxs[k], from: from, to: lineY(sxs[k]), color: style.color(group[k].noteIdx.first ?? 0))
@@ -725,6 +795,16 @@ struct NotationPainter {
             p.closeSubpath()
             ctx.fill(p, with: .color(style.color(a.noteIdx[k])))
         }
+    }
+
+    /// Einzelne Viertelnote zeichnen (z. B. Notenlese-Trainer)
+    func drawLoneNote(_ ctx: GraphicsContext, pitch p: Int, x: CGFloat, treble: Bool, fifths: Int = 0, color: Color, label: String? = nil) {
+        let sp = Score.spell(p, fifths: fifths)
+        let keyAlter = Score.keyAlters(fifths)[((sp.diatonic % 7) + 7) % 7]
+        let it = ScoreItem(kind: .chord, hand: treble ? .right : .left, treble: treble, tick: 0, dur: 4, bar: 0,
+                           noteIdx: [0], pitches: [p], diatonic: [sp.diatonic],
+                           accidental: [sp.alter != keyAlter ? sp.alter : nil])
+        drawSingle(ctx, it, x: x, style: Style(color: { _ in color }, label: { _, _, _ in label }, labelInHead: false))
     }
 
     /// Zeichnet die Einträge `indices` (nach Tick sortiert) der Partitur.

@@ -118,6 +118,8 @@ final class PracticeEngine: ObservableObject {
     @Published var hideOtherHand = Prefs.bool("hideOtherHand", false) { didSet { Prefs.set("hideOtherHand", hideOtherHand) } }
     @Published var concertMode = Prefs.bool("concertMode", false) { didSet { Prefs.set("concertMode", concertMode) } }
     @Published var showChords = Prefs.bool("showChords", true) { didSet { Prefs.set("showChords", showChords) } }
+    /// false = klassisches Notenbild wie gedruckt, true = Kindernoten (Name im Notenkopf, bunte Akkord-Kästchen)
+    @Published var kidNotes = Prefs.bool("kidNotes", false) { didSet { Prefs.set("kidNotes", kidNotes) } }
     @Published var midiRemote = Prefs.bool("midiRemote", false) { didSet { Prefs.set("midiRemote", midiRemote) } }
     @Published var visibleSeconds = Prefs.double("visibleSeconds", 3.5) { didSet { Prefs.set("visibleSeconds", visibleSeconds) } }
     @Published var viewMode = ViewMode(rawValue: Prefs.string("viewMode", "Wasserfall")) ?? .waterfall {
@@ -165,6 +167,8 @@ final class PracticeEngine: ObservableObject {
     private(set) var lastVelocity: UInt8 = 0
     private var practiceSeconds: Double = 0
     var onFinished: ((SessionResult) -> Void)?
+    /// Wird nach jedem Loop-Durchgang mit der Trefferquote (0…1) aufgerufen
+    var onPassCompleted: ((Double) -> Void)?
 
     private var userNoteIdx: [Int] = []
     private var nextUser = 0
@@ -708,6 +712,9 @@ final class PracticeEngine: ObservableObject {
     }
 
     private func loopWrapped() {
+        if mode != .listen, passHits + passErrors > 0 {
+            onPassCompleted?(Double(passHits) / Double(passHits + passErrors))
+        }
         if autoTempo && mode != .listen {
             let total = passHits + passErrors
             if total > 0 {

@@ -102,6 +102,17 @@ enum SongAnalyzer {
         ([0, 3, 7, 10], "m7"), ([0, 4, 7, 11], "maj7"), ([0, 3, 6, 9], "°7"), ([0, 5, 7], "sus4")
     ]
 
+    /// Akkord-Grundton passend zur Tonart schreiben (in Kreuz-Tonarten Gis statt As, in B-Tonarten Es statt Dis)
+    static func rootName(_ pc: Int, keyRoot: Int, minor: Bool) -> String {
+        let major = minor ? (keyRoot + 3) % 12 : keyRoot
+        let fifths = [0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5][major]
+        let sharpNames = ["C", "Cis", "D", "Dis", "E", "F", "Fis", "G", "Gis", "A", "Ais", "H"]
+        let flatNames = ["C", "Des", "D", "Es", "E", "F", "Ges", "G", "As", "A", "B", "H"]
+        if fifths > 0 || (fifths == 0 && minor) { return pc == 10 && !minor ? "B" : sharpNames[pc] }
+        if fifths < 0 { return flatNames[pc] }
+        return ChordNamer.rootNames[pc]
+    }
+
     static func analyze(_ song: MidiSong) -> SongAnalysis {
         let notes = song.notes
 
@@ -159,7 +170,7 @@ enum SongAnalyzer {
             let tones = Set(templates.first { $0.q == p.q }!.iv.map { ($0 + p.root) % 12 })
             let rn = roman(root: p.root, q: p.q, keyRoot: keyRoot, minor: minor)
             segments.append(HarmonySegment(bar: bd.bar, start: bd.start, end: bd.end, rootPC: p.root, quality: p.q,
-                                           chord: ChordNamer.rootNames[p.root] + p.q, roman: rn.roman,
+                                           chord: Self.rootName(p.root, keyRoot: keyRoot, minor: minor) + p.q, roman: rn.roman,
                                            function: rn.function, tones: tones))
         }
 

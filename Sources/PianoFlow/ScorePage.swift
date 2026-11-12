@@ -311,10 +311,15 @@ struct PageRowView: View {
                 guard let k = row.barSlot(bp) else { continue }
                 let xx = max(row.x(forTick: st, in: k) - ls * 0.5, lastX + ls * 3)
                 lastX = xx
-                ctx.draw(Text(seg.chord).font(.system(size: max(10, ls * 1.15), weight: .bold, design: .serif))
-                            .foregroundColor(Color(red: 0.75, green: 0.38, blue: 0.08)),
-                         at: CGPoint(x: xx, y: g.trebleTop - ls * 3.4), anchor: .leading)
+                ctx.draw(Text(seg.chord).font(.system(size: max(10, ls * 1.15), weight: .semibold, design: .serif))
+                            .foregroundColor(engine.kidNotes ? Color(red: 0.75, green: 0.38, blue: 0.08) : ink.opacity(0.85)),
+                         at: CGPoint(x: xx, y: ls * 1.1), anchor: .leading)
             }
+        }
+
+        // Dynamik
+        for (k, bp) in row.bars.enumerated() {
+            if let m = score.dynamics[bp] { painter.dynamic(ctx, m, x: row.barX[k] + ls * 0.4) }
         }
 
         // Noten
@@ -355,7 +360,8 @@ enum NotationRenderTool {
     @MainActor
     static func render(song: MidiSong, out: URL, zoom: Double) {
         let engine = PracticeEngine(song: song, audio: AppServices.shared.audio, midi: AppServices.shared.midi)
-        engine.labelMode = .names
+        engine.labelMode = LabelMode(rawValue: ProcessInfo.processInfo.environment["PF_LABEL"] ?? "") ?? .fingers
+        engine.kidNotes = ProcessInfo.processInfo.environment["PF_KID"] != nil
         if ProcessInfo.processInfo.environment["PF_DUMP"] != nil {
             let sc = engine.notation
             for bp in 0..<min(3, sc.bars.count) {

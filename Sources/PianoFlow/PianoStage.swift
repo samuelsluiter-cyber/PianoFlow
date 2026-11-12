@@ -73,142 +73,6 @@ struct KeyboardPainter {
     }
 }
 
-/// Grand-Staff-Geometrie (Violin- + Bassschlüssel)
-struct StaffGeometry {
-    let rect: CGRect
-    let ls: CGFloat
-    let trebleBottomY: CGFloat
-    let bassBottomY: CGFloat
-
-    init(rect: CGRect, maxLS: CGFloat = 13) {
-        self.rect = rect
-        ls = max(5, min(maxLS, rect.height / 21))
-        trebleBottomY = rect.midY - ls
-        bassBottomY = rect.midY + 5 * ls
-    }
-
-    static func onTreble(_ p: Int) -> Bool { p >= 60 }
-
-    func y(_ p: Int) -> CGFloat {
-        let d = Staff.diatonic(p)
-        if Self.onTreble(p) { return trebleBottomY - CGFloat(d - Staff.trebleBottom) * ls / 2 }
-        return bassBottomY - CGFloat(d - Staff.bassBottom) * ls / 2
-    }
-
-    func drawStaves(_ ctx: GraphicsContext, from x0: CGFloat, to x1: CGFloat, ink: Color) {
-        for k in 0..<5 {
-            for base in [trebleBottomY, bassBottomY] {
-                let y = base - CGFloat(k) * ls
-                ctx.fill(Path(CGRect(x: x0, y: y - 0.5, width: x1 - x0, height: 1)), with: .color(ink.opacity(0.55)))
-            }
-        }
-        ctx.fill(Path(CGRect(x: x0, y: trebleBottomY - 4 * ls, width: 1.5, height: bassBottomY - trebleBottomY + 4 * ls)),
-                 with: .color(ink.opacity(0.6)))
-        ctx.draw(Text("𝄞").font(.system(size: ls * 6.2)).foregroundColor(ink),
-                 at: CGPoint(x: x0 + ls * 1.6, y: trebleBottomY - 1.6 * ls))
-        ctx.draw(Text("𝄢").font(.system(size: ls * 3.6)).foregroundColor(ink),
-                 at: CGPoint(x: x0 + ls * 1.6, y: bassBottomY - 2.9 * ls))
-    }
-
-    func drawLedger(_ ctx: GraphicsContext, p: Int, x: CGFloat, width: CGFloat, ink: Color) {
-        let d = Staff.diatonic(p)
-        let bottomRef = Self.onTreble(p) ? Staff.trebleBottom : Staff.bassBottom
-        let bottomY = Self.onTreble(p) ? trebleBottomY : bassBottomY
-        let rel = d - bottomRef
-        var lines: [Int] = []
-        if rel <= -2 { lines = Array(stride(from: -2, through: rel, by: -2)) }
-        if rel >= 10 { lines = Array(stride(from: 10, through: rel, by: 2)) }
-        for k in lines {
-            let y = bottomY - CGFloat(k) * ls / 2
-            ctx.fill(Path(CGRect(x: x - width * 0.35, y: y - 0.6, width: width * 1.7, height: 1.2)), with: .color(ink.opacity(0.7)))
-        }
-    }
-
-    func drawNote(_ ctx: GraphicsContext, p: Int, x: CGFloat, color: Color, ink: Color) {
-        drawAuthenticNote(ctx, p: p, x: x, duration: 1.0, bpm: 60.0, color: color, ink: ink)
-    }
-
-    func drawAuthenticNote(_ ctx: GraphicsContext, p: Int, x: CGFloat, duration: Double, bpm: Double, color: Color, ink: Color) {
-        let y = y(p)
-        let w = ls * 1.32
-        let h = ls * 0.92
-        let beatSec = 60.0 / max(30.0, bpm)
-        let beats = duration / beatSec
-
-        // 1. Hilfslinien (Ledger lines)
-        drawLedger(ctx, p: p, x: x, width: w, ink: ink)
-
-        // 2. Vorzeichen (Accidentals)
-        if Staff.isSharp(p) {
-            ctx.draw(Text("♯").font(.system(size: ls * 1.6, weight: .bold)).foregroundColor(ink),
-                     at: CGPoint(x: x - ls * 0.72, y: y))
-        }
-
-        // 3. Notenkopf (Authentisch geneigtes Oval, ca. -18 Grad geneigt)
-        var noteCtx = ctx
-        let center = CGPoint(x: x + w / 2, y: y)
-        noteCtx.translateBy(x: center.x, y: center.y)
-        noteCtx.rotate(by: Angle(degrees: -18))
-
-        let isWhole = beats >= 3.2
-        let isHalf = beats >= 1.6 && beats < 3.2
-        let isHollow = isWhole || isHalf
-        let isEighth = beats < 0.75
-
-        let headRect = CGRect(x: -w / 2, y: -h / 2, width: w, height: h)
-        let headPath = Path(ellipseIn: headRect)
-
-        if isHollow {
-            // Halbe oder ganze Note: Hohl mit echtem Notenrand
-            noteCtx.stroke(headPath, with: .color(color), lineWidth: ls * 0.28)
-            noteCtx.stroke(headPath, with: .color(ink.opacity(0.85)), lineWidth: 0.8)
-        } else {
-            // Ausgefüllter Notenkopf (Viertel, Achtel, etc.)
-            noteCtx.fill(headPath, with: .color(color))
-            noteCtx.stroke(headPath, with: .color(ink.opacity(0.85)), lineWidth: 0.8)
-        }
-
-        // 4. Notenhals (Stem) - Nicht bei ganzen Noten
-        if !isWhole {
-            let onTreble = Self.onTreble(p)
-            let midPitch = onTreble ? 71 : 50 // H4 (Treble) bzw. D3 (Bass)
-            let stemUp = p < midPitch
-            let stemLen = ls * 3.3
-            let stemWidth: CGFloat = 1.3
-
-            let stemX = stemUp ? (x + w * 0.88) : (x + w * 0.12)
-            let stemY0 = stemUp ? (y - ls * 0.1) : (y + ls * 0.1)
-            let stemY1 = stemUp ? (stemY0 - stemLen) : (stemY0 + stemLen)
-
-            let stemPath = Path { sp in
-                sp.move(to: CGPoint(x: stemX, y: stemY0))
-                sp.addLine(to: CGPoint(x: stemX, y: stemY1))
-            }
-            ctx.stroke(stemPath, with: .color(color), lineWidth: stemWidth)
-
-            // 5. Fähnchen bei Achtelnoten (Flag)
-            if isEighth {
-                let flagPath = Path { fp in
-                    if stemUp {
-                        fp.move(to: CGPoint(x: stemX, y: stemY1))
-                        fp.addQuadCurve(to: CGPoint(x: stemX + ls * 1.1, y: stemY1 + ls * 1.4),
-                                        control: CGPoint(x: stemX + ls * 1.2, y: stemY1 + ls * 0.4))
-                        fp.addQuadCurve(to: CGPoint(x: stemX + stemWidth, y: stemY1 + ls * 2.1),
-                                        control: CGPoint(x: stemX + ls * 0.6, y: stemY1 + ls * 1.8))
-                    } else {
-                        fp.move(to: CGPoint(x: stemX, y: stemY1))
-                        fp.addQuadCurve(to: CGPoint(x: stemX + ls * 1.1, y: stemY1 - ls * 1.4),
-                                        control: CGPoint(x: stemX + ls * 1.2, y: stemY1 - ls * 0.4))
-                        fp.addQuadCurve(to: CGPoint(x: stemX + stemWidth, y: stemY1 - ls * 2.1),
-                                        control: CGPoint(x: stemX + ls * 0.6, y: stemY1 - ls * 1.8))
-                    }
-                }
-                ctx.fill(flagPath, with: .color(color))
-            }
-        }
-    }
-}
-
 /// Wasserfall, Notenblatt, Klaviatur, Partikel – 60–120 fps
 struct PianoStage: View {
     @ObservedObject var engine: PracticeEngine
@@ -561,7 +425,7 @@ struct PianoStage: View {
 
     // MARK: Notenblatt (Laufband mit echtem Notensatz)
 
-    static let paper = Color(red: 0.985, green: 0.975, blue: 0.95)
+    static let paper = Color(red: 0.995, green: 0.993, blue: 0.985)
     static let sheetInk = Color(white: 0.1)
 
     /// Farbe einer Note auf dem Papier: schwarz, aktuell = blau, getroffen = grün, verpasst = rot
@@ -599,7 +463,7 @@ struct PianoStage: View {
         return NotationPainter.Style(
             color: { sheetColor(engine, $0, active: active, listen: listen) },
             label: { i, d, a in engine.concertMode ? nil : sheetLabel(engine, i, diatonic: d, alter: a) },
-            labelInHead: true)
+            labelInHead: engine.kidNotes)
     }
 
     static func sheetPlayX(_ engine: PracticeEngine, rect: CGRect) -> CGFloat {
@@ -640,7 +504,7 @@ struct PianoStage: View {
         // Loop-Bereich
         if let a = engine.loopStart {
             let b = engine.loopEnd ?? song.duration
-            let xa = max(contentMinX, x(a) - ls * 0.9), xb = min(rect.maxX, x(b) - ls * 0.9)
+            let xa = max(contentMinX, x(a) - ls * 1.7), xb = min(rect.maxX, x(b) - ls * 1.7)
             if xb > xa {
                 c.fill(Path(CGRect(x: xa, y: rect.minY, width: xb - xa, height: rect.height)), with: .color(Color.orange.opacity(0.12)))
                 for (xx, s) in [(xa, CGFloat(1)), (xb, CGFloat(-1))] {
@@ -659,11 +523,11 @@ struct PianoStage: View {
             for bp in bA...bB {
                 let bar = score.bars[bp]
                 let xs = x(score.time(for: bar.startTick))
-                if bp > 0 { painter.barline(notes, x: xs - ls * 0.9) }
-                if bp == score.bars.count - 1 { painter.barline(notes, x: x(score.time(for: bar.endTick)) - ls * 0.9, final: true) }
+                if bp > 0 { painter.barline(notes, x: xs - ls * 1.7) }
+                if bp == score.bars.count - 1 { painter.barline(notes, x: x(score.time(for: bar.endTick)) - ls * 1.7, final: true) }
                 guard bar.index >= 0 else { continue }
                 let isLooped = engine.loopBarStart.map { bar.index >= $0 && bar.index <= (engine.loopBarEnd ?? $0) } ?? false
-                let tagRect = CGRect(x: xs - ls * 0.9 + 3, y: rect.minY + 3, width: 46, height: 17)
+                let tagRect = CGRect(x: xs - ls * 1.7 + 3, y: rect.minY + 3, width: 46, height: 17)
                 if tagRect.minX > contentMinX - 4 {
                     notes.fill(Path(roundedRect: tagRect, cornerRadius: 5), with: .color(isLooped ? Color.orange : ink.opacity(0.07)))
                     notes.draw(Text("Takt \(bar.index + 1)").font(.system(size: 10, weight: .bold, design: .rounded))
@@ -681,10 +545,27 @@ struct PianoStage: View {
                 lastChord = seg.chord
                 let xx = x(score.time(for: score.tick(for: seg.start))) - ls * 0.6
                 guard xx > contentMinX else { continue }
-                drawVisualChordBadge(notes, seg: seg, x: xx, y: max(rect.minY + 23, g.trebleTop - ls * 3.4 - 28))
-                notes.draw(Text("\(seg.roman) · \(seg.function)").font(.system(size: 10, weight: .semibold, design: .serif))
-                            .foregroundColor(Color(red: 0.65, green: 0.35, blue: 0.15)),
-                           at: CGPoint(x: xx + 2, y: min(rect.maxY - 8, g.bassBottom + 3.4 * ls)), anchor: .leading)
+                if engine.kidNotes {
+                    drawVisualChordBadge(notes, seg: seg, x: xx, y: max(rect.minY + 23, g.trebleTop - ls * 3.4 - 28))
+                    notes.draw(Text("\(seg.roman) · \(seg.function)").font(.system(size: 10, weight: .semibold, design: .serif))
+                                .foregroundColor(Color(red: 0.65, green: 0.35, blue: 0.15)),
+                               at: CGPoint(x: xx + 2, y: min(rect.maxY - 8, g.bassBottom + 3.4 * ls)), anchor: .leading)
+                } else {
+                    // Klassisch: schlichtes Akkordsymbol über dem System
+                    notes.draw(Text(seg.chord).font(.system(size: max(11, ls * 1.15), weight: .semibold, design: .serif))
+                                .foregroundColor(ink.opacity(0.85)),
+                               at: CGPoint(x: xx, y: max(rect.minY + 30, g.trebleTop - ls * 3.6)), anchor: .leading)
+                }
+            }
+        }
+
+        // Dynamik (p, mf, f …)
+        if bA <= bB {
+            for bp in bA...bB {
+                if let m = score.dynamics[bp] {
+                    let xx = x(score.time(for: score.bars[bp].startTick)) - ls * 0.3
+                    if xx > contentMinX { painter.dynamic(notes, m, x: xx) }
+                }
             }
         }
 
@@ -700,7 +581,7 @@ struct PianoStage: View {
                               x: { x(score.time(for: score.items[$0].tick)) },
                               barCenter: { bp in
                                   let b = score.bars[bp]
-                                  return (x(score.time(for: b.startTick)) + x(score.time(for: b.endTick))) / 2 - ls * 0.9
+                                  return (x(score.time(for: b.startTick)) + x(score.time(for: b.endTick))) / 2 - ls * 1.7
                               },
                               style: Self.sheetStyle(engine, listen: listen))
         }
@@ -789,7 +670,50 @@ struct PianoStage: View {
     }
 }
 
-enum GeometryReaderless {
-    /// Beschriftung über der Note (Violinschlüssel) bzw. darunter (Bassschlüssel)
-    static func labelAbove(_ p: Int) -> Bool { p >= 60 }
+/// Kurzes Konfetti bei jedem Erfolg (trigger hochzählen)
+struct ConfettiView: View {
+    let trigger: Int
+    @State private var start: Date?
+
+    var body: some View {
+        TimelineView(.animation(paused: start == nil)) { tl in
+            Canvas { ctx, size in
+                guard let s = start else { return }
+                let t = tl.date.timeIntervalSince(s)
+                guard t < 2.2 else { return }
+                let colors: [Color] = [.yellow, .pink, .green, .blue, .orange, .purple]
+                for k in 0..<90 {
+                    var rng = SplitMix(seed: UInt64(k * 7919 + trigger * 104729))
+                    let x0 = Double(rng.next() % 1000) / 1000 * size.width
+                    let vx = (Double(rng.next() % 200) - 100) * 0.6
+                    let vy = -Double(rng.next() % 300) - 250
+                    let x = x0 + vx * t
+                    let y = size.height * 0.55 + vy * t + 420 * t * t
+                    let a = max(0, 1 - t / 2.2)
+                    let r = CGRect(x: x, y: y, width: 7, height: 11)
+                    var c = ctx
+                    c.translateBy(x: r.midX, y: r.midY)
+                    c.rotate(by: .radians(t * Double(k % 7 + 2)))
+                    c.fill(Path(CGRect(x: -3.5, y: -5.5, width: 7, height: 11)), with: .color(colors[k % colors.count].opacity(a)))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .onChange(of: trigger) { _, _ in
+            start = Date()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) { start = nil }
+        }
+    }
+}
+
+struct SplitMix {
+    var state: UInt64
+    init(seed: UInt64) { state = seed &+ 0x9E3779B97F4A7C15 }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E3779B97F4A7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+        return z ^ (z >> 31)
+    }
 }
